@@ -7,7 +7,7 @@ interface CourseContextType {
   activeCourse: Course | null;
   setActiveCourse: (c: Course) => void;
   isLoading: boolean;
-  refreshCourses: () => Promise<void>;
+  refreshCourses: (preferredCourseId?: string) => Promise<void>;
   loadDemoMode: () => Promise<void>;
   createCourse: (data: { code: string; name: string; exam_date?: string }) => Promise<void>;
   darkMode: boolean;
@@ -44,23 +44,42 @@ export const CourseProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     });
   };
 
-  const refreshCourses = async () => {
+  const handleSetActiveCourse = (c: Course) => {
+    setActiveCourse(c);
+    try {
+      localStorage.setItem('examiq_active_course_id', c.id);
+    } catch {}
+  };
+
+  const refreshCourses = async (preferredCourseId?: string) => {
     try {
       setIsLoading(true);
       const list = await api.getCourses();
       setCourses(list);
       if (list.length > 0) {
-        if (!activeCourse || !list.some(c => c.id === activeCourse.id)) {
-          setActiveCourse(list[0]);
-        } else {
-          const updated = list.find(c => c.id === activeCourse.id);
-          if (updated) setActiveCourse(updated);
+        let targetId = preferredCourseId;
+        if (!targetId) {
+          try {
+            targetId = localStorage.getItem('examiq_active_course_id') || undefined;
+          } catch {}
         }
+        if (!targetId && activeCourse) {
+          targetId = activeCourse.id;
+        }
+
+        const matched = list.find((c) => c.id === targetId) || list[0];
+        setActiveCourse(matched);
+        try {
+          localStorage.setItem('examiq_active_course_id', matched.id);
+        } catch {}
       } else {
         // If no course exists, auto-load demo course so user is never faced with an empty, broken state
         const demo = await api.loadDemoCourse();
         setCourses([demo]);
         setActiveCourse(demo);
+        try {
+          localStorage.setItem('examiq_active_course_id', demo.id);
+        } catch {}
       }
     } catch (err: any) {
       console.error('Failed to load courses', err);
@@ -74,9 +93,8 @@ export const CourseProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     try {
       setIsLoading(true);
       const demoCourse = await api.loadDemoCourse();
+      await refreshCourses(demoCourse.id);
       showToast('Loaded Demo Subject: CS302 Operating Systems (with 4 exam papers & 38 questions)');
-      await refreshCourses();
-      setActiveCourse(demoCourse);
     } catch (err: any) {
       showToast('Failed to load demo course: ' + err.message);
     } finally {
@@ -89,8 +107,7 @@ export const CourseProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setIsLoading(true);
       const created = await api.createCourse(data);
       showToast(`Subject "${created.code} - ${created.name}" created!`);
-      await refreshCourses();
-      setActiveCourse(created);
+      await refreshCourses(created.id);
     } catch (err: any) {
       showToast('Error creating course: ' + err.message);
       throw err;
@@ -108,7 +125,7 @@ export const CourseProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       value={{
         courses,
         activeCourse,
-        setActiveCourse,
+        setActiveCourse: handleSetActiveCourse,
         isLoading,
         refreshCourses,
         loadDemoMode,
