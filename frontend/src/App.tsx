@@ -17,7 +17,7 @@ export const App: React.FC = () => {
   return (
     <CourseProvider>
       <BrowserRouter>
-        <div className="flex h-screen w-screen overflow-hidden bg-slate-50 dark:bg-slate-950 font-sans text-slate-900 dark:text-slate-100 selection:bg-indigo-500 selection:text-white">
+        <div className="flex h-screen w-screen overflow-hidden bg-gradient-to-br from-blue-50/70 via-white to-sky-50/40 dark:from-slate-950 dark:via-slate-900 dark:to-blue-950/40 font-sans text-slate-900 dark:text-slate-100 selection:bg-blue-600 selection:text-white">
           {/* Collapsible Sidebar */}
           <Sidebar />
 
