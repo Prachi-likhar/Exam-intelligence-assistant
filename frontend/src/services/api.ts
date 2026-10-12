@@ -8,16 +8,26 @@ import {
   RevisionPlan,
   ScoringWeights
 } from '../types';
+import {
+  DEMO_COURSE,
+  DEMO_DOCUMENTS,
+  DEMO_SYLLABUS,
+  DEMO_QUESTIONS,
+  DEMO_ANALYTICS,
+  DEMO_PRIORITIES,
+  DEMO_REVISION_PLAN
+} from './demoDataset';
 
 export const LIVE_RENDER_API = 'https://exam-intelligence-assistant-2.onrender.com/api';
 
 const getInitialApiBase = () => {
   const envUrl = import.meta.env.VITE_API_URL;
-  if (!envUrl) {
-    return import.meta.env.PROD ? LIVE_RENDER_API : '/api';
+  if (envUrl && envUrl !== '/api') {
+    const clean = envUrl.replace(/\/+$/, '');
+    return clean.endsWith('/api') ? clean : `${clean}/api`;
   }
-  const clean = envUrl.replace(/\/+$/, '');
-  return clean.endsWith('/api') ? clean : `${clean}/api`;
+  // Default to live cloud backend to ensure standalone frontend deployments work out-of-the-box
+  return LIVE_RENDER_API;
 };
 
 let activeApiBase = getInitialApiBase();
@@ -26,29 +36,28 @@ export const getApiBase = () => activeApiBase;
 export const API_BASE = activeApiBase;
 
 /**
- * Robust fetch wrapper that gracefully falls back between local backend
- * and live Render cloud backend if one is unavailable or waking up.
+ * Robust fetch wrapper that gracefully handles endpoint fallback
  */
 export async function apiFetch(endpoint: string, options?: RequestInit): Promise<Response> {
   const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
 
-  // Primary attempt
+  // 1. Primary attempt with activeApiBase
   try {
     const res = await fetch(`${activeApiBase}${cleanEndpoint}`, options);
-    // If local proxy returned 502/504 Bad Gateway, attempt live Render
-    if (!res.ok && (res.status === 502 || res.status === 504) && activeApiBase !== LIVE_RENDER_API) {
-      console.warn(`Primary ${activeApiBase} returned ${res.status}. Falling back to live Render backend.`);
+    // If primary returned 404/502/504 and activeApiBase is not live Render, try live Render
+    if (!res.ok && (res.status === 404 || res.status === 502 || res.status === 504) && activeApiBase !== LIVE_RENDER_API) {
+      console.warn(`Primary ${activeApiBase} returned HTTP ${res.status}. Trying live Render API.`);
       const fallbackRes = await fetch(`${LIVE_RENDER_API}${cleanEndpoint}`, options);
       if (fallbackRes.ok) {
         activeApiBase = LIVE_RENDER_API;
+        return fallbackRes;
       }
-      return fallbackRes;
     }
     return res;
   } catch (err: any) {
-    // If local backend is down (connection refused / timeout)
+    // If primary failed with network error, try live Render
     if (activeApiBase !== LIVE_RENDER_API) {
-      console.warn(`Primary connection to ${activeApiBase} failed (${err.message}). Retrying with live Render backend.`);
+      console.warn(`Primary connection to ${activeApiBase} failed (${err.message}). Trying live Render API.`);
       try {
         const fallbackRes = await fetch(`${LIVE_RENDER_API}${cleanEndpoint}`, options);
         if (fallbackRes.ok) {
@@ -66,9 +75,21 @@ export async function apiFetch(endpoint: string, options?: RequestInit): Promise
 export const api = {
   // Courses
   async getCourses(): Promise<Course[]> {
-    const res = await apiFetch('/courses');
-    if (!res.ok) throw new Error(`Failed to load courses (HTTP ${res.status})`);
-    return res.json();
+    try {
+      const res = await apiFetch('/courses');
+      if (res.ok) {
+        const list: Course[] = await res.json();
+        // Ensure demo course is present in list if server returned empty
+        if (list.length === 0) {
+          return [DEMO_COURSE];
+        }
+        return list;
+      }
+    } catch (err) {
+      console.warn('api.getCourses failed, using fallback demo course:', err);
+    }
+    // Zero-failure fallback
+    return [DEMO_COURSE];
   },
 
   async createCourse(data: { code: string; name: string; exam_date?: string; semester?: string; academic_year?: string }): Promise<Course> {
@@ -82,6 +103,13 @@ export const api = {
   },
 
   async getCourse(id: string): Promise<Course> {
+    if (id === 'demo-cs302-os') {
+      try {
+        const res = await apiFetch(`/courses/${id}`);
+        if (res.ok) return await res.json();
+      } catch {}
+      return DEMO_COURSE;
+    }
     const res = await apiFetch(`/courses/${id}`);
     if (!res.ok) throw new Error('Failed to get course');
     return res.json();
@@ -103,9 +131,7 @@ export const api = {
   },
 
   async loadDemoCourse(): Promise<Course> {
-    let lastError: any = null;
-
-    // 1. Try POST to /courses/demo/load
+    // 1. Try server endpoint
     try {
       const res = await apiFetch('/courses/demo/load', {
         method: 'POST',
@@ -114,25 +140,15 @@ export const api = {
       if (res.ok) {
         return await res.json();
       }
-      // If POST wasn't ok, try GET
       const getRes = await apiFetch('/courses/demo/load');
       if (getRes.ok) {
         return await getRes.json();
       }
-      const errJson = await res.json().catch(() => null);
-      if (errJson?.detail) lastError = new Error(errJson.detail);
     } catch (err) {
-      lastError = err;
+      console.warn('Network call to /courses/demo/load failed:', err);
     }
 
-    // 2. Fallback: check if demo course already exists in GET /courses
-    try {
-      const list = await api.getCourses();
-      const demo = list.find((c) => c.is_demo === 1 || c.id === 'demo-cs302-os');
-      if (demo) return demo;
-    } catch {}
-
-    // 3. Fallback: direct GET /courses/demo-cs302-os
+    // 2. Try fetching /courses/demo-cs302-os directly from server
     try {
       const res = await apiFetch('/courses/demo-cs302-os');
       if (res.ok) {
@@ -140,17 +156,19 @@ export const api = {
       }
     } catch {}
 
-    throw new Error(
-      lastError?.message ||
-      'Server unreachable. If using free-tier cloud backend, it may be waking up from sleep. Please try again in 15 seconds.'
-    );
+    // 3. Guaranteed instant client-side fallback
+    console.info('Activating instant built-in Operating Systems demo dataset');
+    return DEMO_COURSE;
   },
 
   // Documents
   async getDocuments(courseId: string): Promise<DocumentItem[]> {
-    const res = await apiFetch(`/documents/course/${courseId}`);
-    if (!res.ok) throw new Error('Failed to load documents');
-    return res.json();
+    try {
+      const res = await apiFetch(`/documents/course/${courseId}`);
+      if (res.ok) return await res.json();
+    } catch {}
+    if (courseId === 'demo-cs302-os') return DEMO_DOCUMENTS;
+    throw new Error('Failed to load documents');
   },
 
   async uploadDocument(formData: FormData): Promise<DocumentItem> {
@@ -190,9 +208,12 @@ export const api = {
 
   // Syllabus
   async getSyllabus(courseId: string): Promise<SyllabusUnit[]> {
-    const res = await apiFetch(`/syllabus/course/${courseId}`);
-    if (!res.ok) throw new Error('Failed to load syllabus');
-    return res.json();
+    try {
+      const res = await apiFetch(`/syllabus/course/${courseId}`);
+      if (res.ok) return await res.json();
+    } catch {}
+    if (courseId === 'demo-cs302-os') return DEMO_SYLLABUS;
+    throw new Error('Failed to load syllabus');
   },
 
   async addUnit(courseId: string, data: { unit_number: number; title: string }): Promise<void> {
@@ -252,16 +273,27 @@ export const api = {
     difficulty?: string;
     mapping_status?: string;
   }): Promise<Question[]> {
-    const query = new URLSearchParams();
-    if (params?.document_id) query.append('document_id', params.document_id);
-    if (params?.topic_id) query.append('topic_id', params.topic_id);
-    if (params?.question_type) query.append('question_type', params.question_type);
-    if (params?.difficulty) query.append('difficulty', params.difficulty);
-    if (params?.mapping_status) query.append('mapping_status', params.mapping_status);
+    try {
+      const query = new URLSearchParams();
+      if (params?.document_id) query.append('document_id', params.document_id);
+      if (params?.topic_id) query.append('topic_id', params.topic_id);
+      if (params?.question_type) query.append('question_type', params.question_type);
+      if (params?.difficulty) query.append('difficulty', params.difficulty);
+      if (params?.mapping_status) query.append('mapping_status', params.mapping_status);
 
-    const res = await apiFetch(`/questions/course/${courseId}?${query.toString()}`);
-    if (!res.ok) throw new Error('Failed to load questions');
-    return res.json();
+      const res = await apiFetch(`/questions/course/${courseId}?${query.toString()}`);
+      if (res.ok) return await res.json();
+    } catch {}
+    if (courseId === 'demo-cs302-os') {
+      let filtered = [...DEMO_QUESTIONS];
+      if (params?.document_id) filtered = filtered.filter(q => q.document_id === params.document_id);
+      if (params?.topic_id) filtered = filtered.filter(q => q.matched_topic_id === params.topic_id);
+      if (params?.question_type) filtered = filtered.filter(q => q.question_type === params.question_type);
+      if (params?.difficulty) filtered = filtered.filter(q => q.difficulty === params.difficulty);
+      if (params?.mapping_status) filtered = filtered.filter(q => q.mapping_status === params.mapping_status);
+      return filtered;
+    }
+    throw new Error('Failed to load questions');
   },
 
   async updateQuestion(id: string, data: Partial<Question>): Promise<Question> {
@@ -281,15 +313,21 @@ export const api = {
 
   // Analytics & Priorities
   async getAnalytics(courseId: string): Promise<AnalyticsResponse> {
-    const res = await apiFetch(`/analytics/course/${courseId}`);
-    if (!res.ok) throw new Error('Failed to load analytics');
-    return res.json();
+    try {
+      const res = await apiFetch(`/analytics/course/${courseId}`);
+      if (res.ok) return await res.json();
+    } catch {}
+    if (courseId === 'demo-cs302-os') return DEMO_ANALYTICS;
+    throw new Error('Failed to load analytics');
   },
 
   async getPriorities(courseId: string): Promise<StudyPriorityItem[]> {
-    const res = await apiFetch(`/priorities/course/${courseId}`);
-    if (!res.ok) throw new Error('Failed to load study priorities');
-    return res.json();
+    try {
+      const res = await apiFetch(`/priorities/course/${courseId}`);
+      if (res.ok) return await res.json();
+    } catch {}
+    if (courseId === 'demo-cs302-os') return DEMO_PRIORITIES;
+    throw new Error('Failed to load study priorities');
   },
 
   async updateWeights(courseId: string, weights: ScoringWeights): Promise<void> {
@@ -303,9 +341,12 @@ export const api = {
 
   // Revision Planner
   async getRevisionPlan(courseId: string): Promise<RevisionPlan | null> {
-    const res = await apiFetch(`/planner/course/${courseId}`);
-    if (!res.ok) return null;
-    return res.json();
+    try {
+      const res = await apiFetch(`/planner/course/${courseId}`);
+      if (res.ok) return await res.json();
+    } catch {}
+    if (courseId === 'demo-cs302-os') return DEMO_REVISION_PLAN;
+    return null;
   },
 
   async generateRevisionPlan(courseId: string, data: {
