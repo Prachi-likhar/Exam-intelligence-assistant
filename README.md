@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # ExamIQ — AI-Powered Exam Intelligence Assistant
 
 > *"Your syllabus. Your strategy. Your success."*
@@ -223,3 +224,7 @@ ExamIntelligence/
 - **Local Storage**: All documents, question texts, and revision sessions are stored strictly on your local machine in SQLite. No documents are uploaded to third-party cloud services.
 - **Empirical Heuristics**: Priority scores and weightages are based on historical patterns in uploaded papers and do not constitute absolute guarantees of upcoming exam questions.
 - **Scanned Documents**: The quality of question extraction depends on image resolution and document readability. Students can always edit, add, or correct questions manually in the Question Bank.
+=======
+# Exam-intelligence-assistant
+An AI-powered exam preparation platform that helps students plan their studies, practice questions, clarify doubts, and prepare smarter for examinations.
+>>>>>>> b9ad7b62498c8795be7d0dec34465e00b4a8c56c
