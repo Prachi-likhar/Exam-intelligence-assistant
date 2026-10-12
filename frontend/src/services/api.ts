@@ -9,7 +9,16 @@ import {
   ScoringWeights
 } from '../types';
 
-const API_BASE = '/api';
+const getApiBase = () => {
+  const envUrl = import.meta.env.VITE_API_URL;
+  if (!envUrl || envUrl === '/api') {
+    return '/api';
+  }
+  const clean = envUrl.replace(/\/+$/, '');
+  return clean.endsWith('/api') ? clean : `${clean}/api`;
+};
+
+export const API_BASE = getApiBase();
 
 export const api = {
   // Courses
@@ -267,5 +276,14 @@ export const api = {
     const res = await fetch(`${API_BASE}/export/course/${courseId}/report`);
     if (!res.ok) throw new Error('Failed to get printable report');
     return res.json();
+  },
+
+  async checkHealth(): Promise<boolean> {
+    try {
+      const res = await fetch(`${API_BASE}/health`);
+      return res.ok;
+    } catch {
+      return false;
+    }
   },
 };

@@ -31,8 +31,8 @@ export const SettingsPage: React.FC = () => {
 
   useEffect(() => {
     // Check API health
-    fetch('/api/health')
-      .then((res) => (res.ok ? setApiHealth('healthy') : setApiHealth('error')))
+    api.checkHealth()
+      .then((isHealthy) => setApiHealth(isHealthy ? 'healthy' : 'error'))
       .catch(() => setApiHealth('error'));
 
     if (activeCourse?.settings_json) {
