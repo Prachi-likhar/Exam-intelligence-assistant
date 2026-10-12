@@ -73,17 +73,21 @@ export const CourseProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           localStorage.setItem('examiq_active_course_id', matched.id);
         } catch {}
       } else {
-        // If no course exists, auto-load demo course so user is never faced with an empty, broken state
-        const demo = await api.loadDemoCourse();
-        setCourses([demo]);
-        setActiveCourse(demo);
+        // If no course exists on server, auto-seed demo course
         try {
-          localStorage.setItem('examiq_active_course_id', demo.id);
-        } catch {}
+          const demo = await api.loadDemoCourse();
+          setCourses([demo]);
+          setActiveCourse(demo);
+          try {
+            localStorage.setItem('examiq_active_course_id', demo.id);
+          } catch {}
+        } catch (demoErr) {
+          console.warn('Initial demo auto-seed deferred:', demoErr);
+        }
       }
     } catch (err: any) {
       console.error('Failed to load courses', err);
-      showToast('Backend connection error: ' + (err.message || 'Check FastAPI server'));
+      showToast('Backend connection notice: ' + (err.message || 'Connecting to backend...'));
     } finally {
       setIsLoading(false);
     }
@@ -92,11 +96,30 @@ export const CourseProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const loadDemoMode = async () => {
     try {
       setIsLoading(true);
+
+      // 1. If demo course is already in the loaded courses list, activate it immediately!
+      const existingDemo = courses.find((c) => c.is_demo === 1 || c.id === 'demo-cs302-os');
+      if (existingDemo) {
+        handleSetActiveCourse(existingDemo);
+        showToast(`Loaded Demo Subject: ${existingDemo.code} - ${existingDemo.name} (with 4 exam papers & 38 questions)`);
+        return;
+      }
+
+      // 2. Otherwise request server to seed/fetch demo dataset
+      showToast('Loading Demo Subject: CS302 Operating Systems...');
       const demoCourse = await api.loadDemoCourse();
       await refreshCourses(demoCourse.id);
       showToast('Loaded Demo Subject: CS302 Operating Systems (with 4 exam papers & 38 questions)');
     } catch (err: any) {
-      showToast('Failed to load demo course: ' + err.message);
+      // 3. Fallback: check again if courses has demo course
+      const existingDemo = courses.find((c) => c.is_demo === 1 || c.id === 'demo-cs302-os');
+      if (existingDemo) {
+        handleSetActiveCourse(existingDemo);
+        showToast('Active Demo Subject: CS302 Operating Systems');
+      } else {
+        const errorMsg = err?.message || 'Server connection timed out';
+        showToast('Failed to load demo course: ' + errorMsg);
+      }
     } finally {
       setIsLoading(false);
     }

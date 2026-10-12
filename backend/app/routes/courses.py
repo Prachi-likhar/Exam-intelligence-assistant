@@ -39,6 +39,13 @@ async def create_course(payload: CourseCreate, db: aiosqlite.Connection = Depend
         row = await cursor.fetchone()
         return dict(row)
 
+@router.post("/demo/load", response_model=CourseResponse)
+@router.get("/demo/load", response_model=CourseResponse)
+async def load_demo(db: aiosqlite.Connection = Depends(get_db)):
+    """Seed and load the isolated CS302 Operating Systems demo course."""
+    demo_id = await seed_demo_data(db)
+    return await get_course(demo_id, db)
+
 @router.get("/{course_id}", response_model=CourseResponse)
 async def get_course(course_id: str, db: aiosqlite.Connection = Depends(get_db)):
     """Get single course details."""
@@ -88,8 +95,3 @@ async def delete_course(course_id: str, db: aiosqlite.Connection = Depends(get_d
     await db.commit()
     return {"message": "Course deleted successfully", "course_id": course_id}
 
-@router.post("/demo/load", response_model=CourseResponse)
-async def load_demo(db: aiosqlite.Connection = Depends(get_db)):
-    """Seed and load the isolated CS302 Operating Systems demo course."""
-    demo_id = await seed_demo_data(db)
-    return await get_course(demo_id, db)

@@ -13,14 +13,20 @@ DEMO_COURSE_ID = "demo-cs302-os"
 
 async def seed_demo_data(db: aiosqlite.Connection) -> str:
     """Seeds or refreshes the isolated demo course in SQLite."""
-    # Check if demo course exists; delete old demo records to refresh cleanly
+    # Explicitly clear any existing demo records to prevent primary key conflicts
+    await db.execute("DELETE FROM questions WHERE course_id = ?;", (DEMO_COURSE_ID,))
+    await db.execute("DELETE FROM revision_sessions WHERE course_id = ?;", (DEMO_COURSE_ID,))
+    await db.execute("DELETE FROM revision_plans WHERE course_id = ?;", (DEMO_COURSE_ID,))
+    await db.execute("DELETE FROM syllabus_topics WHERE course_id = ?;", (DEMO_COURSE_ID,))
+    await db.execute("DELETE FROM syllabus_units WHERE course_id = ?;", (DEMO_COURSE_ID,))
+    await db.execute("DELETE FROM documents WHERE course_id = ?;", (DEMO_COURSE_ID,))
     await db.execute("DELETE FROM courses WHERE id = ?;", (DEMO_COURSE_ID,))
 
     exam_date = (datetime.now().date() + timedelta(days=21)).strftime("%Y-%m-%d")
 
     # 1. Insert Course
     await db.execute("""
-        INSERT INTO courses (id, code, name, exam_date, semester, academic_year, is_demo, settings_json)
+        INSERT OR REPLACE INTO courses (id, code, name, exam_date, semester, academic_year, is_demo, settings_json)
         VALUES (?, ?, ?, ?, ?, ?, 1, ?);
     """, (
         DEMO_COURSE_ID,
@@ -153,7 +159,7 @@ async def seed_demo_data(db: aiosqlite.Connection) -> str:
     for u_idx, u in enumerate(units_data):
         u_id = f"unit-{u['num']}"
         await db.execute("""
-            INSERT INTO syllabus_units (id, course_id, unit_number, title)
+            INSERT OR REPLACE INTO syllabus_units (id, course_id, unit_number, title)
             VALUES (?, ?, ?, ?);
         """, (u_id, DEMO_COURSE_ID, u["num"], u["title"]))
 
@@ -161,7 +167,7 @@ async def seed_demo_data(db: aiosqlite.Connection) -> str:
             t_id = f"topic-u{u['num']}-t{t_idx+1}"
             topic_id_map[t["title"]] = t_id
             await db.execute("""
-                INSERT INTO syllabus_topics (id, unit_id, course_id, title, subtopics_json, keywords_json, student_mastery, order_index)
+                INSERT OR REPLACE INTO syllabus_topics (id, unit_id, course_id, title, subtopics_json, keywords_json, student_mastery, order_index)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?);
             """, (
                 t_id,
@@ -184,7 +190,7 @@ async def seed_demo_data(db: aiosqlite.Connection) -> str:
 
     for p in papers_meta:
         await db.execute("""
-            INSERT INTO documents (id, course_id, filename, doc_type, exam_year, semester, exam_type, status, page_count, warnings_json)
+            INSERT OR REPLACE INTO documents (id, course_id, filename, doc_type, exam_year, semester, exam_type, status, page_count, warnings_json)
             VALUES (?, ?, ?, 'question_paper', ?, '5th Semester', ?, 'completed', 3, '[]');
         """, (p["id"], DEMO_COURSE_ID, p["filename"], p["year"], p["type"]))
 

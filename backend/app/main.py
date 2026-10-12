@@ -11,6 +11,17 @@ from backend.app.routes import courses, documents, syllabus, questions, analytic
 async def lifespan(app: FastAPI):
     # Initialize SQLite database schema
     await init_db()
+    try:
+        from backend.app.services.demo_data import seed_demo_data
+        from backend.app.config import DB_PATH
+        import aiosqlite
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute("SELECT COUNT(*) FROM courses;") as cur:
+                count_row = await cur.fetchone()
+                if count_row and count_row[0] == 0:
+                    await seed_demo_data(db)
+    except Exception as e:
+        print(f"Startup demo seed notice: {e}")
     yield
 
 app = FastAPI(
